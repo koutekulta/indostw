@@ -17,11 +17,26 @@ const videosPerPage = 40;
 
 const searchInput = originalQuery.toLowerCase().trim();
 
-// Pisahkan kata kunci, ganti tanda hubung dengan spasi
+// --- Daftar Kata yang Dikecualikan (Stop Words) ---
+const stopWords = new Set([
+  'yang', 'dan', 'atau', 'di', 'ke', 'dari', 'untuk', 'dengan', 'pada', 'adalah',
+  'itu', 'ini', 'mereka', 'dia', 'saya', 'kami', 'kita', 'kamu', 'anda', 'mereka',
+  'tidak', 'bukan', 'akan', 'sudah', 'telah', 'belum', 'ada', 'pun', 'saja', 'juga',
+  'hanya', 'sangat', 'lebih', 'paling', 'saat', 'ketika', 'jika', 'agar', 'supaya',
+  'tetapi', 'namun', 'serta', 'seperti', 'yaitu', 'yakni', 'ialah', 'adapun', 'maka',
+  'oleh', 'sejak', 'tanpa', 'melalui', 'tentang', 'terhadap',
+  'begitu', 'begini', 'sini', 'situ', 'mana', 'siapa', 'apa', 'mengapa',
+  'bagaimana', 'dimana', 'kapan', 'kalau', 'walaupun', 'meskipun', 'bahkan', 'hingga',
+  'sampai', 'baik', 'buruk', 'bokep', 'indo', 'video', 'vidio',
+  // Tambahkan kata-kata lain yang ingin Anda kecualikan
+]);
+
+// Proses searchInput untuk mendapatkan kata kunci yang bersih
 const searchWords = searchInput
-    .replace(/-/g, ' ')
-    .split(/\s+/)
-    .filter(word => word.length > 0);
+    .replace(/-/g, ' ') // Ganti dash dengan spasi
+    .split(/\s+/)      // Pisahkan berdasarkan spasi atau lebih
+    .filter(word => word.length > 0 && !stopWords.has(word)); // Filter out stop words
+
 
 let searchResults: VideoData[] = [];
 let preconnectDomains: string[] = [];
@@ -31,9 +46,9 @@ let randomPostsBelowSearch: VideoData[] = [];
 
 const allVideos: VideoData[] = await getAllVideos();
 
+// Logika pencarian hanya berjalan jika ada kata kunci yang valid setelah filter stop words
 if (searchWords.length > 0) {
   try {
-    // --- Perubahan Logika Pencarian dan Scoring ---
     const scoredResults: { video: VideoData; score: number }[] = [];
 
     allVideos.forEach(video => {
@@ -47,44 +62,45 @@ if (searchWords.length > 0) {
       let score = 0;
       let matchedWordCount = 0; // Menghitung berapa banyak kata kunci yang cocok
 
-      // Cek apakah video mengandung SETIDAKNYA SATU kata kunci
+      // Cek apakah video mengandung SETIDAKNYA SATU kata kunci (setelah difilter stop words)
       const containsAnyWord = searchWords.some(word => {
         if (videoContent.includes(word)) {
           matchedWordCount++;
-          return true; // Cocok setidaknya satu kata
+          return true;
         }
         return false;
       });
 
       if (containsAnyWord) {
-        // Jika mengandung setidaknya satu kata, hitung skornya
-        
         // Bonus untuk setiap kata kunci yang cocok (semakin banyak semakin baik)
         score += matchedWordCount * 20;
 
         // 1. Kecocokan di Judul (paling relevan)
         searchWords.forEach(word => {
           if (videoTitle.includes(word)) {
-            score += 50; // Setiap kata kunci yang cocok di judul
+            score += 50;
           }
         });
 
-        // 2. Kecocokan Frasa Lengkap di Judul
+        // 2. Kecocokan Frasa Lengkap di Judul (gunakan searchInput asli jika ingin frasa lengkap)
+        // Perhatian: searchInput masih mengandung stop words. Jika Anda hanya ingin frasa dari non-stop words,
+        // Anda perlu merekonstruksi frasa tersebut dari searchWords, atau mempertimbangkan cara lain.
+        // Untuk saat ini, kita biarkan searchInput asli untuk kecocokan frasa lengkap.
         if (videoTitle.includes(searchInput)) {
-          score += 200; // Bonus besar jika seluruh frasa pencarian ada di judul
+          score += 200;
         }
 
         // 3. Kecocokan di Deskripsi
         searchWords.forEach(word => {
           if (videoDescription.includes(word)) {
-            score += 10; // Setiap kata kunci yang cocok di deskripsi
+            score += 10;
           }
         });
         
         // 4. Kecocokan di Kategori atau Tags
         searchWords.forEach(word => {
             if (videoCategory.includes(word) || videoTags.includes(word)) {
-                score += 30; // Sedikit lebih tinggi dari deskripsi
+                score += 30;
             }
         });
 
@@ -92,18 +108,14 @@ if (searchWords.length > 0) {
       }
     });
 
-    // Urutkan hasil berdasarkan skor (tertinggi ke terendah)
-    // Jika skor sama, urutkan berdasarkan abjad judul
     searchResults = scoredResults
       .sort((a, b) => {
         if (b.score !== a.score) {
-          return b.score - a.score; // Urutkan berdasarkan skor
+          return b.score - a.score;
         }
-        return a.video.title.localeCompare(b.video.title); // Jika skor sama, urutkan abjad
+        return a.video.title.localeCompare(b.video.title);
       })
-      .map(item => item.video); // Ambil hanya objek video
-
-    // --- Akhir Perubahan Logika Pencarian ---
+      .map(item => item.video);
 
     totalPages = Math.ceil(searchResults.length / videosPerPage);
     const validCurrentPage = Math.max(1, Math.min(currentPage, totalPages));
@@ -151,7 +163,7 @@ if (searchWords.length > 0) {
     randomPostsBelowSearch = [];
   }
 } else {
-    // Jika tidak ada query, tampilkan video acak
+    // Jika tidak ada query atau semua query adalah stop words, tampilkan video acak
     const numberOfRandomPosts = 12;
     randomPostsBelowSearch = allVideos
         .sort(() => 0.5 - Math.random())
@@ -191,15 +203,12 @@ const breadcrumbs = [
   { name: `Pencarian: ${displayQuery}`, url: null },
 ];
 
-const pageCanonicalUrl = Astro.url.href;
-
 ---
 
 <Layout
   title={`${displayQuery} di ${nama} | Page ${currentPage}`}
   description={`${displayQuery} ${desk} di ${nama}. Page ${currentPage}.`}
   preconnectDomains={preconnectDomains}
-  canonicalUrl={pageCanonicalUrl}
 >
   <main class="search-page" itemscope itemtype="http://schema.org/SearchResultsPage">
     <nav class="breadcrumb" aria-label="breadcrumb" itemscope itemtype="http://schema.org/BreadcrumbList">
@@ -221,7 +230,7 @@ const pageCanonicalUrl = Astro.url.href;
     </nav>
     <h1 class="search-results-title" itemprop="headline">{`${displayQuery} di ${nama}`}</h1>
 
-    {originalQuery === '' ? (
+    {originalQuery === '' || searchWords.length === 0 ? (
       <p class="no-results-message">
         Silakan masukkan kata kunci di kolom pencarian di atas untuk memulai pencarian video.
       </p>
@@ -237,7 +246,6 @@ const pageCanonicalUrl = Astro.url.href;
       </div>
     )}
 
-    {/* Section video acak hanya muncul jika TIDAK ADA hasil pencarian yang relevan */}
     {paginatedResults.length === 0 && randomPostsBelowSearch.length > 0 && (
       <section class="random-videos-section">
         <h2 class="section-title">Video Mungkin Anda Suka</h2>
